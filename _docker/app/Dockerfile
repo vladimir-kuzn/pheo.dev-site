@@ -1,25 +1,47 @@
-FROM php:8.1-fpm
+FROM ubuntu:22.04
 
-RUN apt-get update && apt-get install -y \
-      apt-utils \
-      libpq-dev \
-      libpng-dev \
-      libzip-dev \
-      zip unzip \
-      git && \
-      docker-php-ext-install pdo_mysql && \
-      docker-php-ext-install bcmath && \
-      docker-php-ext-install gd && \
-      docker-php-ext-install zip && \
-      apt-get clean && \
-      rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+RUN apt-get update
 
-COPY ./_docker/app/php.ini /usr/local/etc/php/conf.d/php.ini
+# Without this some packages from php will require user prompt
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Install composer
-ENV COMPOSER_ALLOW_SUPERUSER=1
-RUN curl -sS https://getcomposer.org/installer | php -- \
-    --filename=composer \
-    --install-dir=/usr/local/bin
+# Install nodejs and npm
+RUN apt-get install -y curl && curl -s https://deb.nodesource.com/setup_18.x | bash && \
+    apt-get install -y nodejs && npm --version
 
+# Install php and composer
+RUN apt-get install -y php-fpm php-curl php-xml php-zip php-mysql php-mbstring
+RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+RUN php composer-setup.php && chmod +x composer.phar && mv composer.phar /usr/bin/composer
+
+# Make php-fpm listen to TCP socket
+RUN echo "listen = 9000" >> /etc/php/8.1/fpm/pool.d/www.conf
+EXPOSE 9000
+
+# Prepare user for launching
+RUN groupadd -g 1000 www
+RUN useradd -u 1000 -ms /bin/bash -g www www
+
+# Copy files and set permissions for new user
+COPY . /var/www
 WORKDIR /var/www
+RUN chown -R www:www /var/www
+RUN chmod -R 755 /var/www
+RUN chmod -R 777 /var/www/storage
+
+USER www
+
+# Install deps for node and php
+RUN composer update && composer install && composer dump-autoload && composer install --no-scripts && php artisan optimize
+RUN npm install
+RUN composer install --no-scripts
+
+# Prepare FPM for non-root launching
+USER root
+
+RUN touch /var/log/php8.1-fpm.log && chown www:www /var/log/php8.1-fpm.log
+RUN chown www:www /run/php
+USER www
+
+# F option forces FPM to stay in foreground
+CMD ["php-fpm8.1", "-F"]

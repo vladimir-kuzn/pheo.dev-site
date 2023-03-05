@@ -7,10 +7,12 @@ services:
             - ./:/var/www
             - ./_docker/nginx/conf.d:/etc/nginx/conf.d
         ports:
-            - 8876:80
+            - 80:80
         depends_on:
             - app
         container_name: project_nginx
+        networks:
+            - pheo
 
     app:
         build:
@@ -19,8 +21,11 @@ services:
         volumes:
             - ./:/var/www
         container_name: project_app
+        restart: always
         depends_on:
             - db
+        networks:
+            - pheo
 
     db:
         image: mysql:8.0
@@ -32,5 +37,10 @@ services:
             MYSQL_ROOT_PASSWORD: root
         ports:
             - 8101:3306
-        command: mysqld --character-set-server=utf8 --collation-server=utf8_unicode_ci
         container_name: project_db
+        networks:
+            - pheo
+
+networks:
+    pheo:
+        driver: bridge
